@@ -144,14 +144,6 @@ SDP new/
 │
 ├── contract/
 │   └── PaymentSystem.sol        # Source contract reference
-│
-├── Reviews/                     # SDP review documentation
-│   ├── Zeroth_Review.md
-│   ├── First_Review.md
-│   ├── Second_Review.md
-│   ├── Third_Review.md
-│   ├── Research_Paper_IEEE.tex  # IEEE research paper (LaTeX)
-│   ├── plot_gas.py              # Gas consumption analysis script
 │   └── plot_time.py             # Transaction time analysis script
 │
 ├── app.py                       # AI Resume Screening (Streamlit)
