@@ -15,10 +15,8 @@
   - [Prerequisites](#prerequisites)
   - [Smart Contract Setup](#smart-contract-setup)
   - [Frontend Setup](#frontend-setup)
-  - [Resume Screening Tool Setup](#resume-screening-tool-setup)
 - [Smart Contract](#smart-contract)
 - [Frontend Components](#frontend-components)
-- [Resume Screening System](#resume-screening-system)
 - [Security](#security)
 - [Deployment](#deployment)
 - [Research & Reviews](#research--reviews)
@@ -30,9 +28,6 @@
 
 **EtherNexus** is a Senior Design Project (SDP) that implements a fully decentralized banking ecosystem deployed on the **Ethereum Sepolia Testnet**. It eliminates reliance on central authorities by providing users with complete, self-custodial control of their digital assets through a modern, premium-grade user interface.
 
-The project also includes an **AI-powered Resume Screening System** built with Python and Streamlit, which uses Sentence Transformers and cosine similarity to semantically rank resumes against a given job description.
-
-- **Project Duration:** December 16, 2025 – February 03, 2026
 - **Final Platform:** Ethereum Sepolia Testnet
 - **Status:** ✅ Completed
 
@@ -99,13 +94,6 @@ The DApp follows a three-layer architectural model:
 - **qrcode.react** — QR code generation
 - **react-hot-toast** — Toast notifications
 - **date-fns** — Date formatting
-
-### AI Resume Screening
-- **Python** + **Streamlit** — Application framework
-- **Sentence Transformers** (`all-MiniLM-L6-v2`) — Semantic embeddings
-- **scikit-learn** — Cosine similarity computation
-- **PyPDF2** + **docx2txt** — Resume text extraction
-- **pandas** + **numpy** — Data processing
 
 ---
 
@@ -215,24 +203,6 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. Connect Met
 
 ---
 
-### Resume Screening Tool Setup
-
-```bash
-# 1. (Recommended) Create and activate a virtual environment
-python -m venv venv
-venv\Scripts\activate       # Windows
-# source venv/bin/activate  # macOS/Linux
-
-# 2. Install Python dependencies
-pip install -r requirements.txt
-
-# 3. Run the Streamlit app
-streamlit run app.py
-```
-
-The app will open at [http://localhost:8501](http://localhost:8501).
-
----
 
 ## Smart Contract
 
@@ -265,23 +235,6 @@ The `PaymentSystem` contract implements a comprehensive on-chain banking system 
 | `Analytics.jsx` | Spending charts and statistical breakdowns |
 | `AdminPanel.jsx` | KYC management, circuit breaker, and owner controls |
 | `Notifications.jsx` | In-app notification feed for blockchain events |
-
----
-
-## Resume Screening System
-
-The AI tool (`app.py`) provides an automated screening pipeline for HR workflows:
-
-1. **Paste** a Job Description into the text area
-2. **Upload** one or more resumes (`.pdf` or `.docx`)
-3. **Click** "Analyze and Rank" to compute semantic similarity scores
-4. **Review** the ranked table sorted by relevance score
-5. **Download** the CSV report for sharing with your team
-
-**Scoring Labels:**
-- ✅ **Highly Relevant** — Similarity Score > 70%
-- 🟡 **Potential Match** — Similarity Score 40%–70%
-- ❌ **Not Relevant** — Similarity Score < 40%
 
 ---
 
@@ -339,8 +292,6 @@ All objectives defined in the Zeroth Review have been met:
 - ✅ Premium Apple-style fintech UI with clean, minimal aesthetics
 - ✅ Smart contract internally audited for common vulnerabilities
 - ✅ Successfully deployed on Ethereum Sepolia Testnet
-- ✅ AI-powered Resume Screening system integrated
-- ✅ IEEE research paper authored and submitted
 
 ---
 
