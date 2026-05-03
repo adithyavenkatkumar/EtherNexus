@@ -50,14 +50,6 @@
 | 💱 **Live ETH/USD Pricing** | Real-time price feed via CoinGecko API |
 | 👤 **Admin Panel** | Owner-level controls including KYC and circuit breaker |
 
-### Resume Screening System (AI Tool)
-| Feature | Description |
-|---|---|
-| 📄 **Multi-format Upload** | Accepts PDF and DOCX resume files |
-| 🤖 **Semantic Ranking** | Uses `all-MiniLM-L6-v2` Sentence Transformer model |
-| 📈 **Similarity Scoring** | Cosine similarity score with Highly Relevant / Potential Match / Not Relevant labels |
-| 📥 **Export Results** | Download ranked results as a CSV report |
-
 ---
 
 ## System Architecture
