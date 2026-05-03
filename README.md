@@ -1,4 +1,4 @@
-# EtherNexus — Blockchain Banking System
+# EtherNexus — Decentralized Banking System
 
 > A decentralized, self-custodial banking platform built on Ethereum, combining the security of Web3 with the usability of traditional banking.
 
@@ -28,7 +28,7 @@
 
 ## Overview
 
-**DataHaven** is a Senior Design Project (SDP) that implements a fully decentralized banking ecosystem deployed on the **Ethereum Sepolia Testnet**. It eliminates reliance on central authorities by providing users with complete, self-custodial control of their digital assets through a modern, premium-grade user interface.
+**EtherNexus** is a Senior Design Project (SDP) that implements a fully decentralized banking ecosystem deployed on the **Ethereum Sepolia Testnet**. It eliminates reliance on central authorities by providing users with complete, self-custodial control of their digital assets through a modern, premium-grade user interface.
 
 The project also includes an **AI-powered Resume Screening System** built with Python and Streamlit, which uses Sentence Transformers and cosine similarity to semantically rank resumes against a given job description.
 
@@ -134,9 +134,7 @@ SDP new/
 │   │   │   ├── GasEstimator.jsx
 │   │   │   ├── Analytics.jsx
 │   │   │   ├── AdminPanel.jsx
-│   │   │   ├── Notifications.jsx
-│   │   │   ├── QRCode.jsx
-│   │   │   └── PriceDisplay.jsx
+│   │   │   └── Notifications.jsx
 │   │   ├── App.jsx
 │   │   ├── App.css
 │   │   └── main.jsx
@@ -277,8 +275,6 @@ The `PaymentSystem` contract implements a comprehensive on-chain banking system 
 | `Analytics.jsx` | Spending charts and statistical breakdowns |
 | `AdminPanel.jsx` | KYC management, circuit breaker, and owner controls |
 | `Notifications.jsx` | In-app notification feed for blockchain events |
-| `QRCode.jsx` | QR code generator for easy address sharing |
-| `PriceDisplay.jsx` | Live ETH/USD price ticker |
 
 ---
 
@@ -350,7 +346,7 @@ All objectives defined in the Zeroth Review have been met:
 - ✅ Fully decentralized, self-custodial banking system
 - ✅ 9+ core banking features implemented and tested
 - ✅ Multi-signature and recurring payment automation
-- ✅ Premium UI with Dark Mode and Glassmorphism aesthetics
+- ✅ Premium Apple-style fintech UI with clean, minimal aesthetics
 - ✅ Smart contract internally audited for common vulnerabilities
 - ✅ Successfully deployed on Ethereum Sepolia Testnet
 - ✅ AI-powered Resume Screening system integrated
