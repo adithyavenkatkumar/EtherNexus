@@ -1,4 +1,4 @@
-# DataHaven — Blockchain Banking System
+# EtherNexus — Blockchain Banking System
 
 > A decentralized, self-custodial banking platform built on Ethereum, combining the security of Web3 with the usability of traditional banking.
 
