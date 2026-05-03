@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import PriceDisplay from './PriceDisplay';
+import { QRCodeSVG } from 'qrcode.react';
+import { Button, Badge } from './UI';
 
-function Balance({ contract, account, refreshTrigger, onTransactionComplete, ethPrice, priceChange }) {
+function Balance({ contract, account, refreshTrigger, onTransactionComplete, ethPrice, priceChange, isUSD }) {
     const [balance, setBalance] = useState('0');
     const [loading, setLoading] = useState(true);
     const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -12,8 +13,6 @@ function Balance({ contract, account, refreshTrigger, onTransactionComplete, eth
     const [kycVerified, setKycVerified] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [dailyLimit, setDailyLimit] = useState({ limit: '0', spent: '0', remaining: '0' });
-    const [newLimit, setNewLimit] = useState('');
-    const [showLimitSetter, setShowLimitSetter] = useState(false);
 
     useEffect(() => {
         if (contract && account) {
@@ -26,219 +25,171 @@ function Balance({ contract, account, refreshTrigger, onTransactionComplete, eth
         try {
             setLoading(true);
             const balanceWei = await contract.getBalance(account);
-            const balanceEth = ethers.formatEther(balanceWei);
-            setBalance(balanceEth);
-        } catch (err) {
-            console.error('Error fetching balance:', err);
-            setBalance('0');
-        } finally {
-            setLoading(false);
-        }
+            setBalance(ethers.formatEther(balanceWei));
+        } catch { setBalance('0'); }
+        finally { setLoading(false); }
     };
 
     const fetchSecurityInfo = async () => {
         try {
             const verified = await contract.isKYCVerified(account);
             setKycVerified(verified);
-
             const paused = await contract.isPaused();
             setIsPaused(paused);
-
             const limitInfo = await contract.getDailyLimitInfo(account);
             setDailyLimit({
                 limit: ethers.formatEther(limitInfo[0]),
                 spent: ethers.formatEther(limitInfo[1]),
-                remaining: ethers.formatEther(limitInfo[2])
+                remaining: ethers.formatEther(limitInfo[2]),
             });
-        } catch (err) {
-            console.error('Error fetching security info:', err);
-        }
-    };
-
-    const handleSetDailyLimit = async (e) => {
-        e.preventDefault();
-        if (!newLimit || parseFloat(newLimit) <= 0) {
-            toast.error('Please enter a valid limit');
-            return;
-        }
-
-        try {
-            const limitWei = ethers.parseEther(newLimit);
-            const tx = await contract.setDailyLimit(limitWei);
-            toast.loading('Setting daily limit...');
-            await tx.wait();
-            toast.success(`Daily limit set to ${newLimit} ETH!`);
-            setNewLimit('');
-            setShowLimitSetter(false);
-            fetchSecurityInfo();
-        } catch (err) {
-            console.error('Error setting limit:', err);
-            toast.error(err.reason || 'Failed to set limit');
-        }
+        } catch {}
     };
 
     const handleWithdraw = async (e) => {
         e.preventDefault();
-
-        if (!withdrawAmount || parseFloat(withdrawAmount) <= 0) {
-            toast.error('Please enter a valid amount');
-            return;
-        }
-
-        if (parseFloat(withdrawAmount) > parseFloat(balance)) {
-            toast.error('Insufficient balance');
-            return;
-        }
-
+        if (!withdrawAmount || parseFloat(withdrawAmount) <= 0) { toast.error('Enter a valid amount'); return; }
         setWithdrawing(true);
         try {
-            const amountWei = ethers.parseEther(withdrawAmount);
-            const tx = await contract.withdraw(amountWei);
-            toast.loading('Processing withdrawal...');
+            const tx = await contract.withdraw(ethers.parseEther(withdrawAmount));
+            toast.loading('Processing withdrawal…');
             await tx.wait();
-            toast.success(`Successfully withdrawn ${withdrawAmount} ETH!`);
+            toast.success(`Withdrawn ${withdrawAmount} ETH`);
             setWithdrawAmount('');
             setShowWithdraw(false);
             if (onTransactionComplete) onTransactionComplete(tx.hash);
-        } catch (err) {
-            console.error('Withdrawal error:', err);
-            toast.error(err.reason || 'Withdrawal failed. Please try again.');
-        } finally {
-            setWithdrawing(false);
-        }
+        } catch (err) { toast.error(err.reason || 'Withdrawal failed'); }
+        finally { setWithdrawing(false); }
     };
 
-    // Daily limit progress (0–100%)
-    const limitNum = parseFloat(dailyLimit.limit);
-    const spentNum = parseFloat(dailyLimit.spent);
-    const spentPercent = limitNum > 0 ? Math.min((spentNum / limitNum) * 100, 100) : 0;
-    const limitColor = spentPercent > 80 ? '#f56565' : spentPercent > 50 ? '#f6ad55' : '#48bb78';
+    const displayBalance = isUSD
+        ? `$${(parseFloat(balance) * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+        : `${parseFloat(balance).toFixed(4)} ETH`;
+
+    const usdValue = `$${(parseFloat(balance) * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
     return (
-        <div className="balance-card">
-            <h3>💰 Your Balance</h3>
+        <>
+            {/* Hero Balance Card */}
+            <div className="hero-panel" style={{ marginBottom: 24 }}>
+                <div className="smart-grid" style={{ alignItems: 'center' }}>
+                    <div className="col-8">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                            <Badge variant={kycVerified ? 'success' : 'warning'}>
+                                {kycVerified ? '✓ KYC Verified' : '⚠ KYC Unverified'}
+                            </Badge>
+                            {isPaused && <Badge variant="danger">Paused</Badge>}
+                        </div>
 
-            {/* Security Status Badges */}
-            <div className="security-badges">
-                <span className={`badge ${kycVerified ? 'verified' : 'unverified'}`}>
-                    {kycVerified ? '✓ KYC Verified' : '⚠️ KYC Unverified'}
-                </span>
-                {isPaused && <span className="badge paused">⏸️ Contract Paused</span>}
-            </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 6, letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+                            Total Balance
+                        </div>
 
-            {/* Loading skeleton */}
-            {loading ? (
-                <div className="balance-skeleton">
-                    <div className="skeleton-block wide"></div>
-                    <div className="skeleton-block narrow"></div>
-                </div>
-            ) : (
-                <>
-                    <div className="balance-amount">
-                        <span className="amount">{parseFloat(balance).toFixed(4)}</span>
-                        <span className="currency">ETH</span>
-                    </div>
+                        {loading ? (
+                            <div className="skeleton" style={{ height: 52, width: 220, borderRadius: 10 }} />
+                        ) : (
+                            <>
+                                <div className="balance-value">
+                                    {displayBalance}
+                                </div>
+                                {isUSD ? (
+                                    <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6 }}>
+                                        {parseFloat(balance).toFixed(4)} ETH
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6 }}>
+                                        {usdValue} USD
+                                    </div>
+                                )}
+                                <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    fontSize: 12, fontWeight: 600, marginTop: 8,
+                                    color: priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                                }}>
+                                    {priceChange >= 0 ? '↑' : '↓'} {Math.abs(priceChange || 0).toFixed(2)}% (24h)
+                                </div>
+                            </>
+                        )}
 
-                    {ethPrice && (
-                        <PriceDisplay ethAmount={balance} ethPrice={ethPrice} priceChange={priceChange} />
-                    )}
-                </>
-            )}
-
-            {/* Daily Limit Progress Bar */}
-            {limitNum > 0 && (
-                <div className="daily-limit-info">
-                    <div className="limit-header">
-                        <h4>📊 Daily Limit</h4>
-                        <span className="limit-values">
-                            <span style={{ color: limitColor }}>{spentNum.toFixed(4)}</span>
-                            {' / '}
-                            {limitNum.toFixed(4)} ETH
-                        </span>
-                    </div>
-                    <div className="limit-bar-bg">
-                        <div
-                            className="limit-bar-fill"
-                            style={{ width: `${spentPercent}%`, background: limitColor }}
-                        ></div>
-                    </div>
-                    <div className="limit-stats">
-                        <span className="label">Remaining:</span>
-                        <span className="value remaining">{parseFloat(dailyLimit.remaining).toFixed(4)} ETH</span>
-                    </div>
-                </div>
-            )}
-
-            <div className="balance-actions">
-                <button className="refresh-button" onClick={fetchBalance} title="Refresh balance">
-                    🔄
-                </button>
-                <button
-                    className="limit-button"
-                    onClick={() => setShowLimitSetter(!showLimitSetter)}
-                >
-                    {showLimitSetter ? '✕ Close' : '📊 Set Limit'}
-                </button>
-                {parseFloat(balance) > 0 && (
-                    <button
-                        className="withdraw-button"
-                        onClick={() => setShowWithdraw(!showWithdraw)}
-                    >
-                        {showWithdraw ? '✕ Close' : '💸 Withdraw'}
-                    </button>
-                )}
-            </div>
-
-            {showLimitSetter && (
-                <form onSubmit={handleSetDailyLimit} className="limit-form">
-                    <div className="form-group">
-                        <label>Daily Limit (ETH)</label>
-                        <input
-                            type="number"
-                            step="0.0001"
-                            placeholder="0.0"
-                            value={newLimit}
-                            onChange={(e) => setNewLimit(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <button type="submit" className="submit-button">
-                        Set Limit
-                    </button>
-                </form>
-            )}
-
-            {showWithdraw && (
-                <form onSubmit={handleWithdraw} className="withdraw-form">
-                    <div className="form-group">
-                        <label>Amount (ETH)</label>
-                        <input
-                            type="number"
-                            step="0.0001"
-                            placeholder="0.0"
-                            value={withdrawAmount}
-                            onChange={(e) => setWithdrawAmount(e.target.value)}
-                            disabled={withdrawing}
-                            max={balance}
-                            required
-                        />
-                        <p className="max-balance">
-                            Max: {parseFloat(balance).toFixed(4)} ETH
+                        {/* Wallet Address Row */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            marginTop: 24, padding: '10px 14px',
+                            background: 'var(--bg-page)', borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border)',
+                        }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Wallet</span>
+                            <code style={{ fontSize: 12.5, flex: 1, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                {account?.slice(0, 10)}...{account?.slice(-6)}
+                            </code>
                             <button
-                                type="button"
-                                className="max-btn"
-                                onClick={() => setWithdrawAmount(parseFloat(balance).toFixed(4))}
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => { navigator.clipboard.writeText(account); toast.success('Address copied!'); }}
                             >
-                                MAX
+                                ⧉ Copy
                             </button>
-                        </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                            <Button variant="primary" style={{ flex: 1 }} onClick={() => toast.success('Deposit via MetaMask')}>
+                                ↓ Deposit
+                            </Button>
+                            <Button variant="secondary" style={{ flex: 1 }} onClick={() => setShowWithdraw(true)}>
+                                ↑ Withdraw
+                            </Button>
+                            <Button variant="secondary" style={{ flex: 1 }} onClick={() => toast('Swap coming soon')}>
+                                ⇄ Swap
+                            </Button>
+                        </div>
                     </div>
-                    <button type="submit" className="submit-button" disabled={withdrawing}>
-                        {withdrawing ? '⏳ Processing...' : '💸 Withdraw'}
-                    </button>
-                </form>
+
+                    {/* QR Code */}
+                    <div className="col-4" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div className="qr-section">
+                            <QRCodeSVG value={account || ''} size={140} />
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                                Scan to receive
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Withdraw Modal */}
+            {showWithdraw && (
+                <div className="modal-overlay" onClick={() => setShowWithdraw(false)}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()}>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Withdraw Funds</h3>
+                        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>
+                            Available: {parseFloat(balance).toFixed(4)} ETH
+                        </p>
+                        <form onSubmit={handleWithdraw}>
+                            <div className="input-group">
+                                <label>Amount (ETH)</label>
+                                <input
+                                    type="number" step="0.0001"
+                                    placeholder="0.0"
+                                    value={withdrawAmount}
+                                    onChange={e => setWithdrawAmount(e.target.value)}
+                                    autoFocus
+                                />
+                                {withdrawAmount && (
+                                    <div className="input-hint">
+                                        ≈ ${(parseFloat(withdrawAmount || 0) * ethPrice).toLocaleString()} USD
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <Button variant="secondary" style={{ flex: 1 }} type="button" onClick={() => setShowWithdraw(false)}>Cancel</Button>
+                                <Button variant="primary" style={{ flex: 1 }} type="submit" disabled={withdrawing}>
+                                    {withdrawing ? 'Processing…' : 'Confirm Withdrawal'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
-        </div>
+        </>
     );
 }
 

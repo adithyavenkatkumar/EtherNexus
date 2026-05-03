@@ -2,220 +2,155 @@ import { useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import GasEstimator from './GasEstimator';
+import { Card, Button } from './UI';
 
 function SendPayment({ contract, account, provider, onTransactionComplete, setProcessingTx, addressBook, ethPrice }) {
-    const [recipient, setRecipient] = useState('');
-    const [amount, setAmount] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState('deposit');
-    const [addressError, setAddressError] = useState('');
+    const [recipient, setRecipient]         = useState('');
+    const [amount, setAmount]               = useState('');
+    const [loading, setLoading]             = useState(false);
+    const [activeTab, setActiveTab]         = useState('deposit');
+    const [addressError, setAddressError]   = useState('');
+    const [showConfirm, setShowConfirm]     = useState(false);
 
-    // Live address validation
-    const validateRecipient = (value) => {
-        setRecipient(value);
-        if (!value) { setAddressError(''); return; }
-
-        // Check if it's a saved contact name
-        const aliasEntry = Object.entries(addressBook).find(
-            ([, name]) => name.toLowerCase() === value.toLowerCase()
-        );
-        if (aliasEntry) { setAddressError(''); return; }
-
-        if (!ethers.isAddress(value)) {
-            setAddressError('⚠️ Invalid Ethereum address');
-        } else {
-            setAddressError('');
-        }
+    const validateRecipient = (val) => {
+        setRecipient(val);
+        if (!val) { setAddressError(''); return; }
+        const alias = Object.entries(addressBook).find(([,n]) => n.toLowerCase() === val.toLowerCase());
+        setAddressError(!alias && !ethers.isAddress(val) ? 'Invalid Ethereum address' : '');
     };
 
-    const handleDeposit = async (e) => {
+    const resolveAddress = () => {
+        const alias = Object.entries(addressBook).find(([,n]) => n.toLowerCase() === recipient.toLowerCase());
+        return alias ? alias[0] : recipient;
+    };
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
-
-        if (!amount || parseFloat(amount) <= 0) {
-            toast.error('Please enter a valid amount');
-            return;
+        if (activeTab === 'send') {
+            const addr = resolveAddress();
+            if (!ethers.isAddress(addr)) { toast.error('Invalid recipient'); return; }
         }
+        if (!amount || parseFloat(amount) <= 0) { toast.error('Enter a valid amount'); return; }
+        setShowConfirm(true);
+    };
 
+    const confirmTransaction = async () => {
+        setShowConfirm(false);
         setLoading(true);
         try {
             const amountWei = ethers.parseEther(amount);
-            const tx = await contract.deposit({ value: amountWei });
-
-            setProcessingTx({ hash: tx.hash, status: 'Confirming...' });
+            let tx;
+            if (activeTab === 'deposit') {
+                tx = await contract.deposit({ value: amountWei });
+            } else {
+                tx = await contract.sendPayment(resolveAddress(), amountWei);
+            }
+            setProcessingTx({ hash: tx.hash, status: 'Confirming…' });
             await tx.wait();
-
-            toast.success(`Successfully deposited ${amount} ETH!`);
-            setAmount('');
+            toast.success(activeTab === 'deposit' ? `Deposited ${amount} ETH!` : `Sent ${amount} ETH!`);
+            setAmount(''); setRecipient('');
             onTransactionComplete(tx.hash);
         } catch (err) {
-            console.error('Deposit error:', err);
-            toast.error(err.reason || 'Deposit failed. Please try again.');
+            toast.error(err.reason || 'Transaction failed');
             setProcessingTx(null);
-        } finally {
-            setLoading(false);
-        }
+        } finally { setLoading(false); }
     };
 
-    const handleSendPayment = async (e) => {
-        e.preventDefault();
-
-        // Resolve alias
-        let targetAddr = recipient;
-        const aliasEntry = Object.entries(addressBook).find(
-            ([, name]) => name.toLowerCase() === recipient.toLowerCase()
-        );
-        if (aliasEntry) {
-            targetAddr = aliasEntry[0];
-        }
-
-        if (!targetAddr || !ethers.isAddress(targetAddr)) {
-            toast.error('Please enter a valid Ethereum address or saved contact name');
-            return;
-        }
-
-        if (!amount || parseFloat(amount) <= 0) {
-            toast.error('Please enter a valid amount');
-            return;
-        }
-
-        if (targetAddr.toLowerCase() === account.toLowerCase()) {
-            toast.error('Cannot send payment to yourself');
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const amountWei = ethers.parseEther(amount);
-            const tx = await contract.sendPayment(targetAddr, { value: amountWei });
-
-            setProcessingTx({ hash: tx.hash, status: 'Confirming...' });
-            await tx.wait();
-
-            toast.success(`Successfully sent ${amount} ETH to ${recipient}!`);
-            setRecipient('');
-            setAmount('');
-            setAddressError('');
-            onTransactionComplete(tx.hash);
-        } catch (err) {
-            console.error('Payment error:', err);
-            toast.error(err.reason || 'Payment failed. Please try again.');
-            setProcessingTx(null);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const usdValue = amount ? `≈ $${(parseFloat(amount||0) * ethPrice).toLocaleString(undefined,{maximumFractionDigits:2})} USD` : '';
 
     return (
-        <div className="payment-card">
-            <div className="tab-buttons">
-                <button
-                    className={`tab-button ${activeTab === 'deposit' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('deposit')}
-                >
-                    💳 Deposit
-                </button>
-                <button
-                    className={`tab-button ${activeTab === 'send' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('send')}
-                >
-                    📤 Send Payment
-                </button>
-            </div>
+        <>
+            <Card title="Send / Deposit">
+                <div className="seg-control" style={{ marginBottom: 20, width:'100%' }}>
+                    <button className={`seg-btn${activeTab==='deposit'?' active':''}`} style={{ flex:1 }} onClick={()=>setActiveTab('deposit')}>
+                        Deposit
+                    </button>
+                    <button className={`seg-btn${activeTab==='send'?' active':''}`} style={{ flex:1 }} onClick={()=>setActiveTab('send')}>
+                        Send
+                    </button>
+                </div>
 
-            {activeTab === 'deposit' ? (
-                <form onSubmit={handleDeposit} className="payment-form">
-                    <h3>Deposit ETH</h3>
-                    <div className="form-group">
+                <form onSubmit={handleSubmit}>
+                    {activeTab === 'send' && (
+                        <div className="input-group">
+                            <label>Recipient Address</label>
+                            <input
+                                type="text"
+                                placeholder="0x… or contact name"
+                                value={recipient}
+                                onChange={e => validateRecipient(e.target.value)}
+                                className={addressError ? 'error' : ''}
+                            />
+                            {addressError && <div className="input-error">{addressError}</div>}
+                        </div>
+                    )}
+
+                    <div className="input-group">
                         <label>Amount (ETH)</label>
                         <input
-                            type="number"
-                            step="0.0001"
-                            min="0.0001"
-                            placeholder="0.0"
+                            type="number" step="0.0001" min="0"
+                            placeholder="0.0000"
                             value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            disabled={loading}
-                            required
+                            onChange={e => setAmount(e.target.value)}
                         />
-                        {amount && parseFloat(amount) > 0 && (
-                            <span className="usd-hint">
-                                ≈ ${(parseFloat(amount) * ethPrice).toFixed(2)} USD
-                            </span>
-                        )}
+                        {usdValue && <div className="input-hint">{usdValue}</div>}
                     </div>
 
                     {amount && parseFloat(amount) > 0 && (
-                        <GasEstimator contract={contract} provider={provider} transactionType="deposit" amount={amount} ethPrice={ethPrice} />
+                        <div style={{ marginBottom: 16 }}>
+                            <GasEstimator
+                                contract={contract} provider={provider}
+                                transactionType={activeTab} amount={amount} ethPrice={ethPrice}
+                            />
+                        </div>
                     )}
 
-                    <button type="submit" className="submit-button" disabled={loading}>
-                        {loading ? '⏳ Processing...' : '💰 Deposit ETH'}
-                    </button>
+                    <Button variant="primary" type="submit" style={{ width:'100%' }} disabled={loading || !!addressError}>
+                        {loading
+                            ? 'Processing…'
+                            : activeTab === 'deposit' ? '↓ Confirm Deposit' : '↑ Confirm Payment'}
+                    </Button>
                 </form>
-            ) : (
-                <form onSubmit={handleSendPayment} className="payment-form">
-                    <h3>Send Payment</h3>
-                    <div className="form-group">
-                        <label>Recipient Address or Name</label>
-                        <input
-                            type="text"
-                            placeholder="0x... or saved contact name"
-                            value={recipient}
-                            onChange={(e) => validateRecipient(e.target.value)}
-                            disabled={loading}
-                            required
-                            className={addressError ? 'input-error' : ''}
-                        />
-                        {addressError && (
-                            <span className="field-error">{addressError}</span>
-                        )}
-                        {Object.keys(addressBook).length > 0 && (
-                            <div className="contact-suggestions">
-                                {Object.entries(addressBook)
-                                    .filter(([, name]) => name.toLowerCase().includes(recipient.toLowerCase()) && recipient)
-                                    .slice(0, 3)
-                                    .map(([addr, name]) => (
-                                        <button
-                                            key={addr}
-                                            type="button"
-                                            className="contact-suggestion-btn"
-                                            onClick={() => { setRecipient(name); setAddressError(''); }}
-                                        >
-                                            {name} — {addr.slice(0, 6)}...{addr.slice(-4)}
-                                        </button>
-                                    ))}
+            </Card>
+
+            {/* Confirmation Modal */}
+            {showConfirm && (
+                <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()}>
+                        <h3 style={{ fontSize:18, fontWeight:700, marginBottom:6 }}>Confirm Transaction</h3>
+                        <p style={{ fontSize:13, color:'var(--text-muted)', marginBottom:24 }}>
+                            Please review before submitting to the network.
+                        </p>
+
+                        <div style={{ background:'var(--bg-page)', borderRadius:'var(--radius-sm)', padding:16, marginBottom:24, display:'flex', flexDirection:'column', gap:10 }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
+                                <span style={{ color:'var(--text-muted)' }}>Type</span>
+                                <span style={{ fontWeight:600 }}>{activeTab === 'deposit' ? 'Deposit' : 'Payment'}</span>
                             </div>
-                        )}
-                    </div>
-                    <div className="form-group">
-                        <label>Amount (ETH)</label>
-                        <input
-                            type="number"
-                            step="0.0001"
-                            min="0.0001"
-                            placeholder="0.0"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            disabled={loading}
-                            required
-                        />
-                        {amount && parseFloat(amount) > 0 && (
-                            <span className="usd-hint">
-                                ≈ ${(parseFloat(amount) * ethPrice).toFixed(2)} USD
-                            </span>
-                        )}
-                    </div>
+                            {activeTab === 'send' && (
+                                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
+                                    <span style={{ color:'var(--text-muted)' }}>To</span>
+                                    <code style={{ fontSize:12, fontFamily:'monospace' }}>{resolveAddress().slice(0,10)}…{resolveAddress().slice(-6)}</code>
+                                </div>
+                            )}
+                            <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
+                                <span style={{ color:'var(--text-muted)' }}>Amount</span>
+                                <span style={{ fontWeight:700, color:'var(--blue)' }}>{amount} ETH</span>
+                            </div>
+                            <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
+                                <span style={{ color:'var(--text-muted)' }}>USD Value</span>
+                                <span style={{ fontWeight:600 }}>{usdValue}</span>
+                            </div>
+                        </div>
 
-                    {amount && parseFloat(amount) > 0 && (
-                        <GasEstimator contract={contract} provider={provider} transactionType="payment" amount={amount} ethPrice={ethPrice} />
-                    )}
-
-                    <button type="submit" className="submit-button" disabled={loading || !!addressError}>
-                        {loading ? '⏳ Processing...' : '📤 Send Payment'}
-                    </button>
-                </form>
+                        <div style={{ display:'flex', gap:10 }}>
+                            <Button variant="secondary" style={{ flex:1 }} onClick={() => setShowConfirm(false)}>Cancel</Button>
+                            <Button variant="primary" style={{ flex:1 }} onClick={confirmTransaction}>Confirm & Send</Button>
+                        </div>
+                    </div>
+                </div>
             )}
-        </div>
+        </>
     );
 }
 

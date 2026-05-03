@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
+import { Card, Button, Badge } from './UI';
 
 function MultiSig({ contract, account, provider }) {
     const [coSigners, setCoSigners] = useState([]);
@@ -10,7 +11,6 @@ function MultiSig({ contract, account, provider }) {
     const [loading, setLoading] = useState(false);
     const [kycVerified, setKycVerified] = useState(false);
 
-    // Proposal form
     const [showProposal, setShowProposal] = useState(false);
     const [proposalReceiver, setProposalReceiver] = useState('');
     const [proposalAmount, setProposalAmount] = useState('');
@@ -41,16 +41,12 @@ function MultiSig({ contract, account, provider }) {
 
     const fetchProposals = async () => {
         try {
-            // Fetch MultiSigTxProposed events
             const filter = contract.filters.MultiSigTxProposed();
             const events = await contract.queryFilter(filter);
 
-            // Map event data to proposal details
             const proposalsData = await Promise.all(events.map(async (event) => {
                 const txId = event.args.txId;
                 const details = await contract.getMultiSigTransaction(txId);
-
-                // Only show proposals where current user is initiator or co-signer
                 const initiator = details[0];
                 const isInitiator = initiator.toLowerCase() === account.toLowerCase();
 
@@ -63,7 +59,7 @@ function MultiSig({ contract, account, provider }) {
                 if (isInitiator || isCoSigner) {
                     return {
                         id: Number(txId),
-                        initiator: details[0],
+                        initiator,
                         receiver: details[1],
                         amount: ethers.formatEther(details[2]),
                         approvalCount: Number(details[3]),
@@ -75,8 +71,6 @@ function MultiSig({ contract, account, provider }) {
                 }
                 return null;
             }));
-
-            // Filter nulls and sort by newest
             setProposals(proposalsData.filter(Boolean).sort((a, b) => b.id - a.id));
         } catch (error) {
             console.error('Error fetching proposals:', error);
@@ -85,26 +79,17 @@ function MultiSig({ contract, account, provider }) {
 
     const handleAddCoSigner = async (e) => {
         e.preventDefault();
-        if (!kycVerified) {
-            toast.error('You must be KYC verified to manage co-signers');
-            return;
-        }
-        if (!ethers.isAddress(newCoSigner)) {
-            toast.error('Invalid Ethereum address');
-            return;
-        }
-
+        if (!kycVerified) { toast.error('KYC required'); return; }
+        if (!ethers.isAddress(newCoSigner)) { toast.error('Invalid address'); return; }
         setLoading(true);
         try {
             const tx = await contract.addCoSigner(newCoSigner);
-            toast.loading('Adding co-signer...');
             await tx.wait();
-            toast.success('Co-signer added successfully!');
+            toast.success('Co-signer added!');
             setNewCoSigner('');
             fetchMultiSigData();
-        } catch (error) {
-            console.error('Error adding co-signer:', error);
-            toast.error(error.reason || 'Failed to add co-signer');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to add co-signer');
         } finally {
             setLoading(false);
         }
@@ -114,13 +99,11 @@ function MultiSig({ contract, account, provider }) {
         setLoading(true);
         try {
             const tx = await contract.removeCoSigner(signer);
-            toast.loading('Removing co-signer...');
             await tx.wait();
             toast.success('Co-signer removed!');
             fetchMultiSigData();
-        } catch (error) {
-            console.error('Error removing co-signer:', error);
-            toast.error(error.reason || 'Failed to remove co-signer');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to remove');
         } finally {
             setLoading(false);
         }
@@ -128,26 +111,19 @@ function MultiSig({ contract, account, provider }) {
 
     const handleProposeProposal = async (e) => {
         e.preventDefault();
-
-        if (!ethers.isAddress(proposalReceiver)) {
-            toast.error('Invalid receiver address');
-            return;
-        }
-
+        if (!ethers.isAddress(proposalReceiver)) { toast.error('Invalid receiver'); return; }
         setLoading(true);
         try {
             const amountWei = ethers.parseEther(proposalAmount);
             const tx = await contract.proposeMultiSigTransaction(proposalReceiver, amountWei);
-            toast.loading('Creating proposal...');
             await tx.wait();
-            toast.success('Transaction proposed! Waiting for approvals.');
+            toast.success('Transaction proposed!');
             setProposalReceiver('');
             setProposalAmount('');
             setShowProposal(false);
             fetchProposals();
-        } catch (error) {
-            console.error('Error proposing transaction:', error);
-            toast.error(error.reason || 'Failed to propose transaction');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to propose');
         } finally {
             setLoading(false);
         }
@@ -157,21 +133,19 @@ function MultiSig({ contract, account, provider }) {
         e.preventDefault();
         const threshNum = parseInt(newThreshold);
         if (isNaN(threshNum) || threshNum <= 0 || threshNum > coSigners.length + 1) {
-            toast.error(`Threshold must be between 1 and ${coSigners.length + 1}`);
+            toast.error(`Invalid threshold`);
             return;
         }
-
         setLoading(true);
         try {
             const tx = await contract.setApprovalThreshold(threshNum);
-            toast.loading('Updating threshold...');
             await tx.wait();
-            toast.success('Approval threshold updated!');
+            toast.success('Threshold updated!');
             setNewThreshold('');
             setShowThresholdSetter(false);
             fetchMultiSigData();
-        } catch (error) {
-            toast.error(error.reason || 'Failed to update threshold');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to update');
         } finally {
             setLoading(false);
         }
@@ -181,12 +155,11 @@ function MultiSig({ contract, account, provider }) {
         setLoading(true);
         try {
             const tx = await contract.approveMultiSigTransaction(txId);
-            toast.loading('Approving transaction...');
             await tx.wait();
-            toast.success('Transaction approved!');
+            toast.success('Approved!');
             fetchProposals();
-        } catch (error) {
-            toast.error(error.reason || 'Failed to approve');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to approve');
         } finally {
             setLoading(false);
         }
@@ -196,195 +169,143 @@ function MultiSig({ contract, account, provider }) {
         setLoading(true);
         try {
             const tx = await contract.executeMultiSigTransaction(txId);
-            toast.loading('Executing transaction...');
             await tx.wait();
-            toast.success('Transaction executed successfully!');
+            toast.success('Executed!');
             fetchProposals();
-        } catch (error) {
-            toast.error(error.reason || 'Failed to execute');
+        } catch (err) {
+            toast.error(err.reason || 'Failed to execute');
         } finally {
             setLoading(false);
         }
     };
 
-    const isExpired = (expiry) => {
-        return Date.now() / 1000 > expiry;
-    };
-
     return (
-        <div className="multisig-card">
-            <div className="analytics-header">
-                <h3>🔐 Multi-Signature Wallet</h3>
-                <button className="refresh-button-small" onClick={() => { fetchMultiSigData(); fetchProposals(); }}>
-                    🔄
-                </button>
-            </div>
-
-            {!kycVerified && (
-                <div className="warning-banner" style={{ marginBottom: '1.5rem', background: 'rgba(246, 173, 85, 0.1)', border: '1px solid var(--warning)', color: 'var(--warning)', padding: '1rem', borderRadius: '10px' }}>
-                    ⚠️ Your account is not KYC verified. You can only approve/execute transactions if you are a co-signer, but you cannot add co-signers or propose new transactions.
-                </div>
-            )}
-
-            <div className="multisig-grid">
-                <div className="multisig-section config-panel">
-                    <h4>⚙️ Configuration</h4>
-                    <div className="threshold-info">
-                        <div className="current-threshold">
-                            <span>Approval Goal: <strong>{threshold > 0 ? `${threshold} of ${coSigners.length + 1}` : 'Not Configured'}</strong></span>
-                            <span>Total Signers: <strong>{coSigners.length + 1}</strong></span>
+        <div className="smart-grid">
+            <div className="col-4">
+                <Card title="🔐 Vault Config">
+                    {!kycVerified && (
+                        <div style={{ background: 'rgba(255, 77, 109, 0.1)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.8rem', color: 'var(--danger)' }}>
+                            ⚠️ KYC Restricted: Verification required to manage vault.
                         </div>
-                        <button
-                            className="text-btn"
+                    )}
+
+                    <div style={{ marginBottom: '2rem' }}>
+                        <div className="text-secondary" style={{ fontSize: '0.8rem' }}>Approval Threshold</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0.5rem 0' }}>
+                            {threshold} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>of {coSigners.length + 1} Signers</span>
+                        </div>
+                        <Button 
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.7rem' }} 
                             onClick={() => setShowThresholdSetter(!showThresholdSetter)}
                             disabled={!kycVerified || coSigners.length === 0}
                         >
-                            {showThresholdSetter ? '✕ Close' : '✏️ Set Threshold'}
-                        </button>
+                            Change Mask
+                        </Button>
                     </div>
 
                     {showThresholdSetter && (
-                        <form onSubmit={handleUpdateThreshold} className="mini-form">
-                            <input
-                                type="number"
-                                placeholder={`1 to ${coSigners.length + 1}`}
-                                value={newThreshold}
-                                onChange={(e) => setNewThreshold(e.target.value)}
-                                required
-                            />
-                            <button type="submit">Update</button>
+                        <form onSubmit={handleUpdateThreshold} style={{ marginBottom: '1.5rem' }}>
+                            <input type="number" value={newThreshold} onChange={e => setNewThreshold(e.target.value)} placeholder="Threshold" style={{ marginBottom: '0.5rem' }} />
+                            <Button variant="primary" type="submit" style={{ width: '100%' }} disabled={loading}>Update</Button>
                         </form>
                     )}
 
-                    <div className="form-group" style={{ marginTop: '1.5rem' }}>
-                        <label>Add New Co-Signer</label>
-                        <form onSubmit={handleAddCoSigner} className="input-group">
-                            <input
-                                type="text"
-                                placeholder="0x... Co-signer address"
-                                value={newCoSigner}
-                                onChange={(e) => setNewCoSigner(e.target.value)}
-                                disabled={loading || !kycVerified}
-                            />
-                            <button type="submit" className="submit-button-mini" disabled={loading || !kycVerified}>
-                                {loading ? '⏳' : '➕ Add'}
-                            </button>
-                        </form>
-                    </div>
-
-                    <div className="cosigners-list">
-                        <h5>Shared with ({coSigners.length})</h5>
-                        {coSigners.length === 0 ? (
-                            <p className="empty-text">No co-signers added yet.</p>
-                        ) : (
-                            coSigners.map((signer, index) => (
-                                <div key={index} className="cosigner-item">
-                                    <code>{signer.slice(0, 10)}...{signer.slice(-6)}</code>
-                                    <button
-                                        className="btn-icon-delete"
-                                        onClick={() => handleRemoveCoSigner(signer)}
-                                        disabled={loading || !kycVerified}
-                                    >🗑️</button>
+                    <div style={{ marginBottom: '2rem' }}>
+                        <div className="text-secondary" style={{ marginBottom: '0.5rem', fontSize: '0.8rem' }}>Co-Signers</div>
+                        <div className="timeline-list">
+                            {coSigners.map((signer, idx) => (
+                                <div key={idx} className="flex-between" style={{ background: 'var(--glass-bg)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{signer.slice(0, 6)}...{signer.slice(-4)}</span>
+                                    <button onClick={() => handleRemoveCoSigner(signer)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>🗑️</button>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                <div className="multisig-section proposals-panel">
-                    <div className="section-header">
-                        <h4>📝 Active Proposals</h4>
-                        <button
-                            className="btn-primary-small"
-                            onClick={() => setShowProposal(!showProposal)}
-                            disabled={!kycVerified || coSigners.length === 0}
-                        >
-                            {showProposal ? '✕ Cancel' : '➕ New Proposal'}
-                        </button>
+                            ))}
+                            {coSigners.length === 0 && <div className="text-secondary" style={{ fontSize: '0.75rem' }}>Only your address signed.</div>}
+                        </div>
                     </div>
 
+                    <form onSubmit={handleAddCoSigner}>
+                        <label className="text-secondary" style={{ fontSize: '0.8rem' }}>Invite Co-Signer</label>
+                        <input 
+                            type="text" 
+                            placeholder="0x..." 
+                            value={newCoSigner} 
+                            onChange={e => setNewCoSigner(e.target.value)} 
+                            disabled={!kycVerified}
+                            style={{ margin: '0.5rem 0' }}
+                        />
+                        <Button variant="secondary" type="submit" disabled={!kycVerified || loading} style={{ width: '100%' }}>Add Partner</Button>
+                    </form>
+                </Card>
+            </div>
+
+            <div className="col-8">
+                <Card title="📝 Voting Proposals" action={
+                    <Button variant="primary" onClick={() => setShowProposal(!showProposal)} disabled={!kycVerified || coSigners.length === 0}>
+                        {showProposal ? '✕ Cancel' : '+ Propose'}
+                    </Button>
+                }>
                     {showProposal && (
-                        <form onSubmit={handleProposeProposal} className="proposal-form-box">
-                            <div className="form-group">
-                                <label>Recipient</label>
-                                <input
-                                    type="text"
-                                    placeholder="0x..."
-                                    value={proposalReceiver}
-                                    onChange={(e) => setProposalReceiver(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Amount (ETH)</label>
-                                <input
-                                    type="number"
-                                    step="0.0001"
-                                    value={proposalAmount}
-                                    onChange={(e) => setProposalAmount(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <button type="submit" className="submit-button">Submit Proposal</button>
-                        </form>
+                        <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)' }}>
+                            <form onSubmit={handleProposeProposal} className="smart-grid">
+                                <div className="col-8">
+                                    <input type="text" placeholder="Recipient 0x..." value={proposalReceiver} onChange={e => setProposalReceiver(e.target.value)} required />
+                                </div>
+                                <div className="col-4">
+                                    <input type="number" step="0.0001" placeholder="ETH" value={proposalAmount} onChange={e => setProposalAmount(e.target.value)} required />
+                                </div>
+                                <div className="col-12" style={{ marginTop: '1rem' }}>
+                                    <Button variant="primary" type="submit" style={{ width: '100%' }}>Launch Proposal</Button>
+                                </div>
+                            </form>
+                        </div>
                     )}
 
-                    <div className="proposals-list">
-                        {proposals.length === 0 ? (
-                            <div className="empty-state-proposals">
-                                <p>No multi-sig proposals found.</p>
-                            </div>
-                        ) : (
-                            proposals.map(p => {
-                                const expired = isExpired(p.expiresAt);
-                                const canExecute = p.approvalCount >= threshold && !p.executed && !expired;
-
-                                return (
-                                    <div key={p.id} className={`proposal-item ${p.executed ? 'executed' : ''} ${expired ? 'expired' : ''}`}>
-                                        <div className="proposal-header">
-                                            <span className="tx-id">TX #{p.id}</span>
-                                            <span className={`status-pill ${p.executed ? 'executed' : expired ? 'expired' : 'active'}`}>
-                                                {p.executed ? 'Executed' : expired ? 'Expired' : 'Pending'}
-                                            </span>
-                                        </div>
-                                        <div className="proposal-body">
-                                            <div className="prop-row">
-                                                <span className="prop-label">To:</span>
-                                                <code>{p.receiver}</code>
-                                            </div>
-                                            <div className="prop-row">
-                                                <span className="prop-label">Value:</span>
-                                                <span className="prop-value">{p.amount} ETH</span>
-                                            </div>
-                                            <div className="prop-row">
-                                                <span className="prop-label">Signatures:</span>
-                                                <span className="prop-value">{p.approvalCount} / {threshold}</span>
-                                            </div>
-                                        </div>
-                                        <div className="proposal-footer">
-                                            {!p.executed && !expired && (
-                                                <div className="action-btns">
-                                                    <button
-                                                        className="approve-btn"
-                                                        onClick={() => handleApprove(p.id)}
-                                                        disabled={loading}
-                                                    >👍 Approve</button>
-                                                    {canExecute && (
-                                                        <button
-                                                            className="execute-btn"
-                                                            onClick={() => handleExecute(p.id)}
-                                                            disabled={loading}
-                                                        >🚀 Execute</button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
+                    <div className="timeline-list">
+                        {proposals.map(p => {
+                            const expired = Date.now() / 1000 > p.expiresAt;
+                            const progress = (p.approvalCount / threshold) * 100;
+                            return (
+                                <div key={p.id} className="timeline-item" style={{ opacity: p.executed || expired ? 0.6 : 1 }}>
+                                    <div className="timeline-itemIcon" style={{ background: p.executed ? 'var(--success)1A' : 'var(--primary)1A' }}>
+                                        {p.executed ? '✅' : '📦'}
                                     </div>
-                                );
-                            })
-                        )}
+                                    <div style={{ flex: 1 }}>
+                                        <div className="flex-between">
+                                            <div style={{ fontWeight: 700 }}>Withdrawal Proposal #{p.id}</div>
+                                            <Badge variant={p.executed ? "success" : (expired ? "danger" : "primary")}>
+                                                {p.executed ? "Executed" : (expired ? "Expired" : "Pending")}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex-between" style={{ marginTop: '0.5rem' }}>
+                                            <div className="text-secondary" style={{ fontSize: '0.8rem' }}>Target: {p.receiver.slice(0, 10)}...</div>
+                                            <div style={{ fontWeight: 800 }}>{p.amount} ETH</div>
+                                        </div>
+                                        
+                                        <div style={{ marginTop: '1rem' }}>
+                                            <div className="flex-between" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>
+                                                <span>Approvals: {p.approvalCount}/{threshold}</span>
+                                                <span>{Math.round(progress)}%</span>
+                                            </div>
+                                            <div style={{ width: '100%', height: '4px', background: 'var(--glass-bg)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${progress}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }}></div>
+                                            </div>
+                                        </div>
+
+                                        {!p.executed && !expired && (
+                                            <div className="flex-between gap-1" style={{ marginTop: '1.5rem' }}>
+                                                <Button variant="secondary" onClick={() => handleApprove(p.id)} disabled={loading} style={{ flex: 1 }}>👍 Approve</Button>
+                                                {p.approvalCount >= threshold && (
+                                                    <Button variant="primary" onClick={() => handleExecute(p.id)} disabled={loading} style={{ flex: 1 }}>🚀 Execute</Button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {proposals.length === 0 && <div style={{ textAlign: 'center', padding: '4rem 1rem' }} className="text-secondary">No active proposals found in history.</div>}
                     </div>
-                </div>
+                </Card>
             </div>
         </div>
     );

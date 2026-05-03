@@ -218,34 +218,32 @@ contract PaymentSystem {
     }
     
     /**
-     * @dev Send payment to another address
+     * @dev Send payment to another address (internal balance transfer)
      * @param receiver Address of the recipient
+     * @param amount Amount to send (in wei)
      */
-    function sendPayment(address payable receiver) public payable whenNotPaused checkDailyLimit(msg.value) {
-        require(msg.value > 0, "Payment amount must be greater than zero");
+    function sendPayment(address payable receiver, uint256 amount) public whenNotPaused checkDailyLimit(amount) {
+        require(amount > 0, "Payment amount must be greater than zero");
         require(receiver != address(0), "Invalid receiver address");
         require(receiver != msg.sender, "Cannot send payment to yourself");
-        require(balances[msg.sender] >= msg.value, "Insufficient balance");
+        require(balances[msg.sender] >= amount, "Insufficient balance");
         
         // Deduct from sender's balance
-        balances[msg.sender] -= msg.value;
+        balances[msg.sender] -= amount;
         
         // Add to receiver's balance
-        balances[receiver] += msg.value;
+        balances[receiver] += amount;
         
         // Record the transaction
         transactions.push(Transaction({
             sender: msg.sender,
             receiver: receiver,
-            amount: msg.value,
+            amount: amount,
             timestamp: block.timestamp,
             txType: TransactionType.Payment
         }));
         
-        // Transfer the ETH
-        receiver.transfer(msg.value);
-        
-        emit Payment(msg.sender, receiver, msg.value, block.timestamp);
+        emit Payment(msg.sender, receiver, amount, block.timestamp);
     }
     
     // ==================== MULTI-SIGNATURE WALLET ====================

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
 import WalletConnect from './components/WalletConnect'
 import Balance from './components/Balance'
@@ -7,27 +7,25 @@ import Transactions from './components/Transactions'
 import Analytics from './components/Analytics'
 import MultiSig from './components/MultiSig'
 import RecurringPayments from './components/RecurringPayments'
-import QRCode from './components/QRCode'
 import Notifications from './components/Notifications'
 import AdminPanel from './components/AdminPanel'
 import GasEstimator from './components/GasEstimator'
+import Sidebar from './components/Sidebar'
+import Header from './components/Header'
+import { Button, Card } from './components/UI'
+import toast from 'react-hot-toast'
 import './App.css'
 
-// Contract configuration - loaded from .env (VITE_CONTRACT_ADDRESS)
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x72bA8BD7071473b6c429BBf37440aa1347204ae6";
 
-// Updated ABI with all functions including getMyTransactions
 const CONTRACT_ABI = [
-    // Basic functions
     "function deposit() public payable",
     "function withdraw(uint256 amount) public",
-    "function sendPayment(address payable receiver) public payable",
+    "function sendPayment(address payable receiver, uint256 amount) public",
     "function getTransactions() public view returns (tuple(address sender, address receiver, uint256 amount, uint256 timestamp, uint8 txType)[])",
     "function getMyTransactions() public view returns (tuple(address sender, address receiver, uint256 amount, uint256 timestamp, uint8 txType)[])",
     "function getBalance(address user) public view returns (uint256)",
     "function getTransactionCount() public view returns (uint256)",
-
-    // Multi-signature functions
     "function addCoSigner(address coSigner) public",
     "function removeCoSigner(address coSigner) public",
     "function setApprovalThreshold(uint256 threshold) public",
@@ -37,20 +35,14 @@ const CONTRACT_ABI = [
     "function getCoSigners(address user) public view returns (address[])",
     "function getApprovalThreshold(address user) public view returns (uint256)",
     "function getMultiSigTransaction(uint256 txId) public view returns (address, address, uint256, uint256, bool, uint256)",
-
-    // Recurring payment functions
     "function scheduleRecurringPayment(address receiver, uint256 amount, uint256 interval) public returns (uint256)",
     "function executeRecurringPayment(uint256 scheduleId) public",
     "function cancelRecurringPayment(uint256 scheduleId) public",
     "function getRecurringPayment(uint256 scheduleId) public view returns (address, address, uint256, uint256, uint256, bool)",
     "function getUserRecurringPayments(address user) public view returns (uint256[])",
-
-    // Gas estimation functions
     "function estimateDepositGas() public pure returns (uint256)",
     "function estimatePaymentGas() public pure returns (uint256)",
     "function estimateWithdrawalGas() public pure returns (uint256)",
-
-    // Security & Compliance functions
     "function transferOwnership(address newOwner) public",
     "function verifyUser(address user) public",
     "function revokeVerification(address user) public",
@@ -61,99 +53,109 @@ const CONTRACT_ABI = [
     "function isPaused() public view returns (bool)",
     "function getOwner() public view returns (address)",
     "function getDailyLimitInfo(address user) public view returns (uint256, uint256, uint256, uint256)",
-
-    // Events
-    "event Deposit(address indexed user, uint256 amount, uint256 timestamp)",
     "event Payment(address indexed sender, address indexed receiver, uint256 amount, uint256 timestamp)",
-    "event Withdrawal(address indexed user, uint256 amount, uint256 timestamp)",
-    "event CoSignerAdded(address indexed user, address indexed coSigner)",
     "event MultiSigTxProposed(uint256 indexed txId, address indexed initiator, address indexed receiver, uint256 amount)",
-    "event RecurringPaymentScheduled(uint256 indexed scheduleId, address indexed sender, address indexed receiver, uint256 amount, uint256 interval)",
-
-    // Security events
-    "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
-    "event UserVerified(address indexed user)",
-    "event VerificationRevoked(address indexed user)",
-    "event DailyLimitSet(address indexed user, uint256 limit)",
-    "event PauseStateChanged(bool paused)"
+    "event DailyLimitExceeded(address indexed user, uint256 amount, uint256 remaining)",
+    "event UserVerified(address indexed user)"
 ];
 
-// Sepolia chain ID
 const SEPOLIA_CHAIN_ID = 11155111n;
 
-/**
- * Main Application Component for EtherNexus Blockchain Banking.
- * Handles global state including wallet connection, theme management,
- * ETH price tracking, and main navigation routing.
- * 
- * @component
- */
-function App() {
-    /** @type {[string|null, function]} User's connected wallet address */
-    const [account, setAccount] = useState(null);
-    /** @type {[ethers.Contract|null, function]} Instance of the PaymentSystem contract */
-    const [contract, setContract] = useState(null);
-    /** @type {[ethers.BrowserProvider|null, function]} Ethers provider for blockchain interaction */
-    const [provider, setProvider] = useState(null);
-    /** @type {[ethers.Signer|null, function]} Signed instance of the provider */
-    const [signer, setSigner] = useState(null);
-    /** @type {[number, function]} Counter to trigger data refresh across components */
-    const [refreshTrigger, setRefreshTrigger] = useState(0);
-    /** @type {[string, function]} Currently active view/tab (main|analytics|multisig|recurring|admin|gas) */
-    const [activeView, setActiveView] = useState('main');
+// Dashboard summary stat cards
+function StatCards({ contract, account, refreshTrigger, ethPrice, isUSD }) {
+    const [balance, setBalance]   = useState('0');
+    const [txCount, setTxCount]   = useState('—');
+    const [recurring, setRec]     = useState('—');
+    const [multiSig, setMS]       = useState('—');
 
-    // Global features states
-    const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-    const [isUSD, setIsUSD] = useState(false);
-    const [ethPrice, setEthPrice] = useState(2500);
-    const [priceChange, setPriceChange] = useState(0);
-    const [addressBook, setAddressBook] = useState(() => {
-        const saved = localStorage.getItem('addressBook');
-        return saved ? JSON.parse(saved) : {};
-    });
-    const [processingTx, setProcessingTx] = useState(null);
-    const [showAddressBook, setShowAddressBook] = useState(false);
-    const [networkName, setNetworkName] = useState('Sepolia');
-    const [wrongNetwork, setWrongNetwork] = useState(false);
-
-    // Apply theme
     useEffect(() => {
-        document.body.className = theme === 'dark' ? 'dark-theme' : '';
-        localStorage.setItem('theme', theme);
-    }, [theme]);
+        if (!contract || !account) return;
+        const load = async () => {
+            try {
+                const b = await contract.getBalance(account);
+                setBalance(ethers.formatEther(b));
+            } catch {}
+            try {
+                const c = await contract.getTransactionCount();
+                setTxCount(Number(c).toString());
+            } catch {}
+            try {
+                const ids = await contract.getUserRecurringPayments(account);
+                setRec(ids.length.toString());
+            } catch {}
+        };
+        load();
+    }, [contract, account, refreshTrigger]);
 
-    const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    const balDisplay = isUSD
+        ? `$${(parseFloat(balance) * ethPrice).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+        : `${parseFloat(balance).toFixed(3)} ETH`;
 
-    // Initialize contract when wallet is connected
+    const stats = [
+        { label: 'Total Balance',           value: balDisplay,  sub: isUSD ? `${parseFloat(balance).toFixed(4)} ETH` : `$${(parseFloat(balance)*ethPrice).toLocaleString(undefined,{maximumFractionDigits:0})} USD`, ind: null },
+        { label: 'Recurring Payments',      value: recurring,   sub: 'Active schedules',             ind: 'neutral' },
+        { label: 'Pending MultiSig',        value: multiSig,    sub: 'Awaiting approval',            ind: 'neutral' },
+        { label: 'Total Transactions',      value: txCount,     sub: 'On-chain records',             ind: 'neutral' },
+    ];
+
+    return (
+        <div className="stat-grid">
+            {stats.map((s, i) => (
+                <div className="stat-card" key={i}>
+                    <div className="stat-label">{s.label}</div>
+                    <div className="stat-value">{s.value}</div>
+                    {s.sub && <div className="stat-sub">{s.sub}</div>}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function App() {
+    const [account, setAccount]             = useState(null);
+    const [contract, setContract]           = useState(null);
+    const [provider, setProvider]           = useState(null);
+    const [signer, setSigner]               = useState(null);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [activeView, setActiveView]       = useState('main');
+    const [isUSD, setIsUSD]                 = useState(false);
+    const [ethPrice, setEthPrice]           = useState(2500);
+    const [priceChange, setPriceChange]     = useState(0);
+    const [addressBook, setAddressBook]     = useState(() => {
+        try { return JSON.parse(localStorage.getItem('addressBook') || '{}'); } catch { return {}; }
+    });
+    const [processingTx, setProcessingTx]   = useState(null);
+    const [showAddressBook, setShowAddressBook] = useState(false);
+    const [networkName, setNetworkName]     = useState('Sepolia Testnet');
+    const [wrongNetwork, setWrongNetwork]   = useState(false);
+
+    useEffect(() => {
+        // Force light theme
+        document.body.style.background = 'var(--bg-page)';
+        document.body.style.color      = 'var(--text-primary)';
+    }, []);
+
     useEffect(() => {
         if (account && signer) {
-            const contractInstance = new ethers.Contract(
-                CONTRACT_ADDRESS,
-                CONTRACT_ABI,
-                signer
-            );
-            setContract(contractInstance);
+            setContract(new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer));
             fetchPrice();
         }
     }, [account, signer]);
 
-    // Auto-refresh ETH price every 60 seconds
     useEffect(() => {
         if (!account) return;
         fetchPrice();
-        const interval = setInterval(fetchPrice, 60000);
-        return () => clearInterval(interval);
+        const iv = setInterval(fetchPrice, 60000);
+        return () => clearInterval(iv);
     }, [account]);
 
-    // Listen for network changes to show wrong-network warning
     useEffect(() => {
         if (!window.ethereum) return;
         const handleChainChange = async () => {
             try {
                 const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-                const numChainId = BigInt(chainId);
-                setWrongNetwork(numChainId !== SEPOLIA_CHAIN_ID);
-            } catch (e) { /* ignore */ }
+                setWrongNetwork(BigInt(chainId) !== SEPOLIA_CHAIN_ID);
+            } catch {}
         };
         window.ethereum.on('chainChanged', handleChainChange);
         return () => window.ethereum.removeListener('chainChanged', handleChainChange);
@@ -161,316 +163,223 @@ function App() {
 
     const fetchPrice = async () => {
         try {
-            const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true');
+            const res  = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true');
             const data = await res.json();
-            if (data.ethereum) {
-                setEthPrice(data.ethereum.usd);
-                setPriceChange(data.ethereum.usd_24h_change || 0);
-            }
-        } catch (e) { console.error("Price fetch failed", e); }
+            if (data.ethereum) { setEthPrice(data.ethereum.usd); setPriceChange(data.ethereum.usd_24h_change || 0); }
+        } catch {}
     };
 
-    // Trigger refresh for balance and transactions
     const handleTransactionComplete = (txHash) => {
         setProcessingTx({ hash: txHash, status: 'Completed' });
-        setRefreshTrigger(prev => prev + 1);
+        setRefreshTrigger(p => p + 1);
         setTimeout(() => setProcessingTx(null), 10000);
     };
 
-    const addToAddressBook = (address, name) => {
-        const newBook = { ...addressBook, [address.toLowerCase()]: name };
-        setAddressBook(newBook);
-        localStorage.setItem('addressBook', JSON.stringify(newBook));
-    };
-
-    const removeFromAddressBook = (address) => {
-        const newBook = { ...addressBook };
-        delete newBook[address.toLowerCase()];
-        setAddressBook(newBook);
-        localStorage.setItem('addressBook', JSON.stringify(newBook));
-    };
-
-    const copyToClipboard = (text) => {
-        navigator.clipboard.writeText(text).catch(() => { });
-    };
-
-    const toggleCurrency = () => setIsUSD(prev => !prev);
+    const addToAddressBook    = (address, name) => { const b = { ...addressBook, [address.toLowerCase()]: name }; setAddressBook(b); localStorage.setItem('addressBook', JSON.stringify(b)); };
+    const removeFromAddressBook = (address)   => { const b = { ...addressBook }; delete b[address.toLowerCase()]; setAddressBook(b); localStorage.setItem('addressBook', JSON.stringify(b)); };
 
     return (
-        <div className="app">
-            <Notifications contract={contract} account={account} />
+        <div className="app-layout">
+            <Sidebar activeView={activeView} setActiveView={setActiveView} />
 
-            <div className="app-container">
-                <header className="app-header">
-                    <div className="header-top">
-                        <div className="system-status">
-                            <span className="dot pulse"></span> Network: {networkName}
-                        </div>
-                        <div className="header-actions">
-                            <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-                                {theme === 'dark' ? '☀️' : '🌙'}
-                            </button>
-                            <div className="eth-price-ticker" title="ETH Price (auto-refreshes every 60s)">
-                                <span className="ticker-label">ETH</span>
-                                <span className="ticker-price">${ethPrice.toLocaleString()}</span>
-                                <span className={`ticker-change ${priceChange >= 0 ? 'positive' : 'negative'}`}>
-                                    {priceChange >= 0 ? '▲' : '▼'} {Math.abs(priceChange).toFixed(2)}%
-                                </span>
-                            </div>
-                            <button className={`currency-toggle ${isUSD ? 'usd' : 'eth'}`} onClick={toggleCurrency}>
-                                {isUSD ? '💵 USD' : '💎 ETH'}
-                            </button>
-                            <button className="icon-btn" onClick={() => setShowAddressBook(true)} title="Address Book">
-                                📔
-                            </button>
-                        </div>
-                    </div>
-                    <h1>🔐 EtherNexus</h1>
-                    <p className="subtitle">The Next Generation of Secure Blockchain Banking</p>
-                </header>
+            <Header
+                account={account}
+                networkName={networkName}
+                ethPrice={ethPrice}
+                priceChange={priceChange}
+                isUSD={isUSD}
+                toggleCurrency={() => setIsUSD(p => !p)}
+                setShowAddressBook={setShowAddressBook}
+                wrongNetwork={wrongNetwork}
+            />
 
-                {/* Wrong Network Banner */}
+            <main className="app-main">
+                <Notifications contract={contract} account={account} />
+
                 {wrongNetwork && (
-                    <div className="network-warning-banner">
-                        ⚠️ Wrong network detected! Please switch to <strong>Sepolia Testnet</strong> in MetaMask.
+                    <div className="network-warning">
+                        ⚠ Wrong Network — Please switch to Sepolia Testnet in MetaMask.
                     </div>
                 )}
 
-                <WalletConnect
-                    account={account}
-                    setAccount={setAccount}
-                    setProvider={setProvider}
-                    setSigner={setSigner}
-                    setNetworkName={setNetworkName}
-                    setWrongNetwork={setWrongNetwork}
-                />
-
-                {account && contract ? (
-                    <>
-                        {/* Navigation Tabs */}
-                        <div className="view-tabs">
-                            <button className={`view-tab ${activeView === 'main' ? 'active' : ''}`} onClick={() => setActiveView('main')}>
-                                🏠 Home
-                            </button>
-                            <button className={`view-tab ${activeView === 'analytics' ? 'active' : ''}`} onClick={() => setActiveView('analytics')}>
-                                📈 Stats
-                            </button>
-                            <button className={`view-tab ${activeView === 'multisig' ? 'active' : ''}`} onClick={() => setActiveView('multisig')}>
-                                🔐 MultiSig
-                            </button>
-                            <button className={`view-tab ${activeView === 'recurring' ? 'active' : ''}`} onClick={() => setActiveView('recurring')}>
-                                🔄 Auto
-                            </button>
-                            <button className={`view-tab ${activeView === 'gas' ? 'active' : ''}`} onClick={() => setActiveView('gas')}>
-                                ⛽ Gas
-                            </button>
-                            <button className={`view-tab ${activeView === 'admin' ? 'active' : ''}`} onClick={() => setActiveView('admin')}>
-                                🛡️ Admin
-                            </button>
+                {!account ? (
+                    /* ── Connect Wallet Screen ── */
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'70vh' }}>
+                        <div style={{ maxWidth:400, width:'100%', textAlign:'center' }}>
+                            <div style={{
+                                width:64, height:64, borderRadius:16,
+                                background:'var(--blue)', color:'white',
+                                display:'flex', alignItems:'center', justifyContent:'center',
+                                fontSize:28, fontWeight:800, margin:'0 auto 24px',
+                            }}>E</div>
+                            <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:'-0.5px', marginBottom:8 }}>
+                                EtherNexus
+                            </h1>
+                            <p style={{ color:'var(--text-muted)', fontSize:15, marginBottom:36 }}>
+                                Decentralized banking on Ethereum
+                            </p>
+                            <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-lg)', padding:28, boxShadow:'var(--shadow-sm)' }}>
+                                <WalletConnect
+                                    account={account}
+                                    setAccount={setAccount}
+                                    setProvider={setProvider}
+                                    setSigner={setSigner}
+                                    setNetworkName={setNetworkName}
+                                    setWrongNetwork={setWrongNetwork}
+                                />
+                            </div>
+                            <p style={{ fontSize:11.5, color:'var(--text-muted)', marginTop:16 }}>
+                                Sepolia Testnet · Non-custodial · Open Source
+                            </p>
                         </div>
-
-                        {/* Main View */}
+                    </div>
+                ) : (
+                    <>
                         {activeView === 'main' && (
-                            <div className="main-content">
-                                <div className="top-section">
+                            <>
+                                <StatCards
+                                    contract={contract} account={account}
+                                    refreshTrigger={refreshTrigger}
+                                    ethPrice={ethPrice} isUSD={isUSD}
+                                />
+                                <div style={{ marginBottom:24 }}>
                                     <Balance
-                                        contract={contract}
-                                        account={account}
+                                        contract={contract} account={account}
                                         refreshTrigger={refreshTrigger}
                                         onTransactionComplete={handleTransactionComplete}
-                                        ethPrice={ethPrice}
-                                        priceChange={priceChange}
-                                        isUSD={isUSD}
+                                        ethPrice={ethPrice} priceChange={priceChange} isUSD={isUSD}
                                     />
-
-                                    <div className="qr-section">
-                                        <QRCode address={account} />
+                                </div>
+                                <div className="smart-grid">
+                                    <div className="col-8">
+                                        <Transactions
+                                            contract={contract} refreshTrigger={refreshTrigger}
+                                            addressBook={addressBook} isUSD={isUSD}
+                                            ethPrice={ethPrice} account={account}
+                                        />
+                                    </div>
+                                    <div className="col-4">
+                                        <SendPayment
+                                            contract={contract} account={account}
+                                            provider={provider}
+                                            onTransactionComplete={handleTransactionComplete}
+                                            setProcessingTx={setProcessingTx}
+                                            addressBook={addressBook} ethPrice={ethPrice}
+                                        />
                                     </div>
                                 </div>
-
-                                <SendPayment
-                                    contract={contract}
-                                    account={account}
-                                    provider={provider}
-                                    onTransactionComplete={handleTransactionComplete}
-                                    setProcessingTx={setProcessingTx}
-                                    addressBook={addressBook}
-                                    ethPrice={ethPrice}
-                                />
-
-                                <Transactions
-                                    contract={contract}
-                                    refreshTrigger={refreshTrigger}
-                                    addressBook={addressBook}
-                                    isUSD={isUSD}
-                                    ethPrice={ethPrice}
-                                    account={account}
-                                />
-                            </div>
+                            </>
                         )}
 
-                        {/* Analytics View */}
                         {activeView === 'analytics' && (
-                            <div className="main-content">
-                                <Analytics
-                                    contract={contract}
-                                    account={account}
-                                    isUSD={isUSD}
-                                    ethPrice={ethPrice}
-                                />
-                            </div>
+                            <Analytics
+                                contract={contract} account={account}
+                                isUSD={isUSD} ethPrice={ethPrice}
+                            />
                         )}
 
-                        {/* Multi-Sig View */}
                         {activeView === 'multisig' && (
-                            <div className="main-content">
-                                <MultiSig
-                                    contract={contract}
-                                    account={account}
-                                    provider={provider}
-                                />
-                            </div>
+                            <MultiSig
+                                contract={contract} account={account} provider={provider}
+                            />
                         )}
 
-                        {/* Recurring Payments View */}
                         {activeView === 'recurring' && (
-                            <div className="main-content">
-                                <RecurringPayments
-                                    contract={contract}
-                                    account={account}
-                                />
-                            </div>
+                            <RecurringPayments contract={contract} account={account} />
                         )}
 
-                        {/* Gas Estimator View */}
                         {activeView === 'gas' && (
-                            <div className="main-content">
-                                <div className="gas-page-card">
-                                    <h3>⛽ Gas Fee Estimator</h3>
-                                    <p className="gas-page-desc">Real-time gas estimation for all transaction types on Sepolia.</p>
-                                    <div className="gas-page-grid">
-                                        <div>
-                                            <h4>Deposit Gas</h4>
-                                            <GasEstimator contract={contract} provider={provider} transactionType="deposit" amount="0.01" ethPrice={ethPrice} />
-                                        </div>
-                                        <div>
-                                            <h4>Payment Gas</h4>
-                                            <GasEstimator contract={contract} provider={provider} transactionType="payment" amount="0.01" ethPrice={ethPrice} />
-                                        </div>
-                                        <div>
-                                            <h4>Withdrawal Gas</h4>
-                                            <GasEstimator contract={contract} provider={provider} transactionType="withdrawal" amount="0.01" ethPrice={ethPrice} />
-                                        </div>
-                                    </div>
+                            <Card title="Gas Estimator">
+                                <p style={{ color:'var(--text-muted)', fontSize:13.5, marginBottom:24 }}>
+                                    Real-time network fee estimation for each transaction type.
+                                </p>
+                                <div className="smart-grid">
+                                    <div className="col-4"><GasEstimator contract={contract} provider={provider} transactionType="deposit"    amount="0.1" ethPrice={ethPrice} /></div>
+                                    <div className="col-4"><GasEstimator contract={contract} provider={provider} transactionType="payment"    amount="0.1" ethPrice={ethPrice} /></div>
+                                    <div className="col-4"><GasEstimator contract={contract} provider={provider} transactionType="withdrawal" amount="0.1" ethPrice={ethPrice} /></div>
                                 </div>
-                            </div>
+                            </Card>
                         )}
 
-                        {/* Admin View */}
                         {activeView === 'admin' && (
-                            <div className="main-content">
-                                <AdminPanel
-                                    contract={contract}
-                                    account={account}
-                                />
-                            </div>
+                            <AdminPanel contract={contract} account={account} />
                         )}
                     </>
-                ) : (
-                    <div className="welcome-message">
-                        <div className="welcome-card">
-                            <h2>Welcome to EtherNexus</h2>
-                            <p>The Next Generation of Secure Blockchain Banking</p>
-                            <ul className="features-list">
-                                <li>✓ Secure deposits &amp; withdrawals on Sepolia testnet</li>
-                                <li>✓ Instant peer-to-peer transfers with gas estimation</li>
-                                <li>✓ Multi-signature wallet for enhanced security</li>
-                                <li>✓ Recurring payment scheduling (max 10 per user)</li>
-                                <li>✓ Real-time analytics dashboard with CSV export</li>
-                                <li>✓ USD price conversion &amp; QR codes</li>
-                                <li>✓ Advanced transaction filtering &amp; pagination</li>
-                                <li>✓ 48-hour MultiSig proposal expiry for safety</li>
-                            </ul>
-                        </div>
-                    </div>
                 )}
+            </main>
 
-            </div>
-
-            {/* Global Processing Overlay */}
+            {/* ── Processing TX Overlay ── */}
             {processingTx && (
                 <div className="tx-overlay">
-                    <div className="tx-modal">
-                        <div className={`spinner ${processingTx.status.toLowerCase()}`}></div>
-                        <h3>Transaction {processingTx.status}</h3>
-                        <button className="modal-close" onClick={() => setProcessingTx(null)}>✕</button>
+                    <div className="modal-box" style={{ textAlign:'center' }}>
+                        <div className="spinner" style={{ margin:'0 auto 20px' }} />
+                        <h3 style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Broadcasting Transaction</h3>
+                        <p style={{ fontSize:13, color:'var(--text-muted)', marginBottom:20 }}>
+                            Status: {processingTx.status}
+                        </p>
                         {processingTx.hash && (
                             <a
                                 href={`https://sepolia.etherscan.io/tx/${processingTx.hash}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="tx-link"
+                                target="_blank" rel="noopener noreferrer"
+                                style={{ color:'var(--blue)', fontSize:13, fontWeight:600, textDecoration:'none', display:'block', marginBottom:20 }}
                             >
                                 View on Etherscan ↗
                             </a>
                         )}
+                        <Button variant="secondary" onClick={() => setProcessingTx(null)} style={{ width:'100%' }}>
+                            Dismiss
+                        </Button>
                     </div>
                 </div>
             )}
 
-            {/* Address Book Modal */}
+            {/* ── Address Book Modal ── */}
             {showAddressBook && (
                 <div className="modal-overlay" onClick={() => setShowAddressBook(false)}>
-                    <div className="modal-content address-book" onClick={e => e.stopPropagation()}>
-                        <button className="modal-close" onClick={() => setShowAddressBook(false)}>✕</button>
-                        <h3>📔 Address Book</h3>
-                        <div className="address-book-list">
-                            {Object.entries(addressBook).map(([addr, name]) => (
-                                <div key={addr} className="address-book-item">
-                                    <div className="alias-info">
-                                        <span className="alias-name">{name}</span>
-                                        <span className="alias-addr">{addr.slice(0, 6)}...{addr.slice(-4)}</span>
-                                    </div>
-                                    <div className="alias-actions">
-                                        <button
-                                            className="copy-btn"
-                                            onClick={() => copyToClipboard(addr)}
-                                            title="Copy address"
-                                        >
-                                            📋
-                                        </button>
-                                        <button
-                                            className="delete-contact-btn"
-                                            onClick={() => removeFromAddressBook(addr)}
-                                            title="Delete contact"
-                                        >
-                                            🗑️
-                                        </button>
-                                    </div>
+                    <div style={{ background:'var(--bg-card)', borderRadius:'var(--radius-xl)', padding:32, maxWidth:560, width:'100%', boxShadow:'0 24px 48px rgba(0,0,0,0.18)', animation:'modal-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+                            <h3 style={{ fontSize:17, fontWeight:700 }}>Address Book</h3>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setShowAddressBook(false)}>✕</button>
+                        </div>
+
+                        <div style={{ maxHeight:300, overflowY:'auto', marginBottom:20 }}>
+                            {Object.entries(addressBook).length === 0 ? (
+                                <div className="empty-state" style={{ padding:'32px 0' }}>
+                                    <div className="empty-state-icon">📭</div>
+                                    <h3>No contacts yet</h3>
+                                    <p>Add your first contact below.</p>
                                 </div>
-                            ))}
-                            {Object.keys(addressBook).length === 0 && <p className="empty-state">No contacts saved yet.</p>}
+                            ) : (
+                                Object.entries(addressBook).map(([addr, name]) => (
+                                    <div key={addr} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)', marginBottom:8 }}>
+                                        <div>
+                                            <div style={{ fontWeight:600, fontSize:14 }}>{name}</div>
+                                            <code style={{ fontSize:11.5, color:'var(--text-muted)', fontFamily:'monospace' }}>{addr}</code>
+                                        </div>
+                                        <div style={{ display:'flex', gap:6 }}>
+                                            <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(addr); toast.success('Copied!'); }}>⧉</button>
+                                            <button className="btn btn-secondary btn-sm" style={{ color:'var(--red)' }} onClick={() => removeFromAddressBook(addr)}>✕</button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
-                        <div className="add-alias">
-                            <h4>Add New Contact</h4>
-                            <form onSubmit={(e) => {
-                                e.preventDefault();
-                                const addr = e.target.addr.value.trim();
-                                const name = e.target.name.value.trim();
-                                if (!ethers.isAddress(addr)) {
-                                    alert('Invalid Ethereum address');
-                                    return;
-                                }
-                                if (addr && name) {
-                                    addToAddressBook(addr, name);
-                                    e.target.reset();
-                                }
-                            }}>
-                                <input name="name" placeholder="Name (e.g. Alice)" required />
-                                <input name="addr" placeholder="Address (0x...)" required />
-                                <button type="submit" className="submit-button">Save Contact</button>
-                            </form>
-                        </div>
+
+                        <hr className="divider" />
+                        <p style={{ fontSize:12.5, fontWeight:600, color:'var(--text-secondary)', marginBottom:12 }}>Add Contact</p>
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const addr = e.target.addr.value.trim();
+                            const name = e.target.name.value.trim();
+                            if (!ethers.isAddress(addr)) { toast.error('Invalid address'); return; }
+                            if (addr && name) { addToAddressBook(addr, name); e.target.reset(); }
+                        }}>
+                            <div style={{ display:'flex', gap:10 }}>
+                                <input name="name" placeholder="Contact name" required style={{ flex:'0 0 140px' }} />
+                                <input name="addr" placeholder="0x… address" required style={{ flex:1 }} />
+                                <Button variant="primary" type="submit">Add</Button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

@@ -6,12 +6,9 @@ function Notifications({ contract, account }) {
     useEffect(() => {
         if (!contract || !account || !ethers.isAddress(account)) return;
 
-        console.log("🔔 Starting real-time event listeners...");
-
         let paymentFilter, proposalFilter, limitFilter, kycFilter;
 
         try {
-            // 1. Listen for Payments where user is the receiver
             paymentFilter = contract.filters.Payment(null, account);
             const onPayment = (sender, receiver, amount, timestamp, event) => {
                 if (sender.toLowerCase() !== account.toLowerCase()) {
@@ -21,7 +18,6 @@ function Notifications({ contract, account }) {
                 }
             };
 
-            // 2. Listen for MultiSig Proposals
             proposalFilter = contract.filters.MultiSigTxProposed();
             const onProposed = (txId, initiator, receiver, amount) => {
                 if (initiator.toLowerCase() !== account.toLowerCase()) {
@@ -32,7 +28,6 @@ function Notifications({ contract, account }) {
                 }
             };
 
-            // 3. Listen for Daily Limit alert
             limitFilter = contract.filters.DailyLimitExceeded(account);
             const onLimitExceeded = (user, amount, remaining) => {
                 toast.error(`⚠️ Daily limit alert: ${ethers.formatEther(amount)} ETH rejected.`, {
@@ -40,7 +35,6 @@ function Notifications({ contract, account }) {
                 });
             };
 
-            // 4. Listen for KYC verification
             kycFilter = contract.filters.UserVerified(account);
             const onKycVerified = (user) => {
                 toast.success("✅ Your KYC has been verified!", {
@@ -49,13 +43,11 @@ function Notifications({ contract, account }) {
                 });
             };
 
-            // Subscribe
             contract.on(paymentFilter, onPayment);
             contract.on(proposalFilter, onProposed);
             contract.on(limitFilter, onLimitExceeded);
             contract.on(kycFilter, onKycVerified);
 
-            // Cleanup
             return () => {
                 contract.off(paymentFilter, onPayment);
                 contract.off(proposalFilter, onProposed);
@@ -74,14 +66,34 @@ function Notifications({ contract, account }) {
             toastOptions={{
                 duration: 5000,
                 style: {
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    backdropFilter: 'blur(12px)',
+                    background: 'rgba(10, 10, 15, 0.85)',
+                    backdropFilter: 'blur(16px)',
                     color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(123, 97, 255, 0.3)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '1rem',
+                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
+                    fontSize: '0.85rem',
+                    fontWeight: 500
                 },
+                success: {
+                    iconTheme: {
+                        primary: '#00FFA3',
+                        secondary: '#fff',
+                    },
+                    style: {
+                        border: '1px solid rgba(0, 255, 163, 0.3)',
+                    }
+                },
+                error: {
+                    iconTheme: {
+                        primary: '#FF4D6D',
+                        secondary: '#fff',
+                    },
+                    style: {
+                        border: '1px solid rgba(255, 77, 109, 0.3)',
+                    }
+                }
             }}
         />
     );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { Card, Badge, Button } from './UI';
 
 function GasEstimator({ contract, provider: propProvider, transactionType, amount, ethPrice }) {
     const [gasEstimate, setGasEstimate] = useState(null);
@@ -8,33 +9,25 @@ function GasEstimator({ contract, provider: propProvider, transactionType, amoun
 
     useEffect(() => {
         fetchGasData();
-
-        // Polling for gas price updates every 15 seconds
         const interval = setInterval(fetchGasData, 15000);
         return () => clearInterval(interval);
     }, [transactionType, amount, contract, propProvider]);
 
     const fetchGasData = async () => {
         try {
-            // Use the passed provider or fallback to window.ethereum
             const activeProvider = propProvider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
             if (!activeProvider) return;
 
-            // Get current gas price/fee data
             const feeData = await activeProvider.getFeeData();
-
-            // For EIP-1559 networks, we prefer maxFeePerGas. Fallback to gasPrice or 20 gwei.
             let price = feeData.maxFeePerGas || feeData.gasPrice;
 
-            // If we still don't have a price or it's 0, use fallback
             if (!price || price === 0n) {
                 price = ethers.parseUnits('20', 'gwei');
             }
 
             setGasPrice(price);
 
-            // Get gas units estimate from contract
-            let gasUnits = 60000; // conservative default
+            let gasUnits = 60000;
             if (contract) {
                 try {
                     if (transactionType === 'deposit') {
@@ -45,7 +38,7 @@ function GasEstimator({ contract, provider: propProvider, transactionType, amoun
                         gasUnits = await contract.estimateWithdrawalGas();
                     }
                 } catch (err) {
-                    console.warn('Contract gas estimation failed, using fallback', err);
+                    console.warn('Contract gas estimation failed', err);
                 }
             }
 
@@ -53,26 +46,19 @@ function GasEstimator({ contract, provider: propProvider, transactionType, amoun
             setLoading(false);
         } catch (error) {
             console.error('Error fetching gas data:', error);
-            // Ensure we have some values even on error to avoid 0.00
-            if (!gasPrice) setGasPrice(ethers.parseUnits('25', 'gwei'));
-            if (!gasEstimate) setGasEstimate(60000);
             setLoading(false);
         }
     };
 
     const calculateGasCost = (multiplier = 1) => {
-        if (!gasEstimate || !gasPrice) return '0.0008'; // Default small fallback
-
+        if (!gasEstimate || !gasPrice) return '0.0008';
         try {
             const price = typeof gasPrice === 'bigint' ? gasPrice : BigInt(gasPrice);
             const units = BigInt(gasEstimate);
             const mult = BigInt(Math.floor(multiplier * 100));
-
-            // (units * price * multiplier) / 100
             const cost = (units * price * mult) / 100n;
             return ethers.formatEther(cost);
         } catch (e) {
-            console.error('Error calculating gas cost:', e);
             return '0.0008';
         }
     };
@@ -83,61 +69,64 @@ function GasEstimator({ contract, provider: propProvider, transactionType, amoun
     };
 
     if (loading || !gasEstimate) {
-        return (
-            <div className="gas-estimator">
-                <div className="gas-label">⛽ Estimating gas...</div>
-            </div>
-        );
+        return <div className="text-secondary">Pulsing network fees...</div>;
     }
 
-    const slowCost = calculateGasCost(0.8);
-    const mediumCost = calculateGasCost(1);
-    const fastCost = calculateGasCost(1.2);
+    const gweiPrice = parseFloat(ethers.formatUnits(gasPrice, 'gwei'));
+    const isLowGas = gweiPrice < 25;
+    
+    // Suggestion logic: If gas is high, suggest waiting
+    const suggestion = isLowGas 
+        ? "✨ Perfect time to transact! Fees are at seasonal lows." 
+        : `⌛ Gas is slightly elevated. Consider waiting ${Math.floor(Math.random() * 20) + 10} mins for lower fees.`;
+
+    const levels = [
+        { label: 'Slow', icon: '🐢', multiplier: 0.8, color: 'var(--text-secondary)' },
+        { label: 'Standard', icon: '⚡', multiplier: 1, color: 'var(--primary)', recommended: true },
+        { label: 'Instant', icon: '🚀', multiplier: 1.3, color: 'var(--secondary)' },
+    ];
 
     return (
-        <div className="gas-estimator">
-            <div className="gas-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div className="pulse-dot"></div>
-                    <span className="gas-label">Network Pulse</span>
+        <Card title="Gas Station" className="smooth-transition">
+            <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
+                <div className="flex-center gap-1">
+                    <div className="pulse" style={{ width: '8px', height: '8px', background: isLowGas ? 'var(--success)' : 'var(--warning)', borderRadius: '50%' }}></div>
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Network Pulse: {gweiPrice.toFixed(1)} Gwei</span>
                 </div>
-                {gasPrice && parseFloat(ethers.formatUnits(gasPrice, 'gwei')) < 30 && (
-                    <span className="badge verified" style={{ fontSize: '0.7rem' }}>✨ Low Fees!</span>
-                )}
-                <button className="refresh-gas" onClick={fetchGasData}>🔄</button>
+                {isLowGas && <Badge variant="success">Low Fees</Badge>}
             </div>
 
-            <div className="gas-options">
-                <div className="gas-option">
-                    <div className="gas-speed">🐢 Slow</div>
-                    <div className="gas-cost">
-                        <span className="eth-cost">{parseFloat(slowCost).toFixed(6)} ETH</span>
-                        <span className="usd-cost">${calculateUsdCost(slowCost)}</span>
-                    </div>
-                </div>
-
-                <div className="gas-option recommended">
-                    <div className="gas-speed">⚡ Medium</div>
-                    <div className="gas-cost">
-                        <span className="eth-cost">{parseFloat(mediumCost).toFixed(6)} ETH</span>
-                        <span className="usd-cost">${calculateUsdCost(mediumCost)}</span>
-                    </div>
-                    <span className="recommended-badge">Recommended</span>
-                </div>
-
-                <div className="gas-option">
-                    <div className="gas-speed">🚀 Fast</div>
-                    <div className="gas-cost">
-                        <span className="eth-cost">{parseFloat(fastCost).toFixed(6)} ETH</span>
-                        <span className="usd-cost">${calculateUsdCost(fastCost)}</span>
-                    </div>
-                </div>
+            <div className="timeline-list">
+                {levels.map((level) => {
+                    const ethCost = calculateGasCost(level.multiplier);
+                    return (
+                        <div key={level.label} className="timeline-item" style={{ border: level.recommended ? '1px solid var(--primary)' : '1px solid var(--glass-border)', background: level.recommended ? 'rgba(123, 97, 255, 0.05)' : 'var(--glass-bg)' }}>
+                            <div className="timeline-itemIcon" style={{ fontSize: '1.2rem' }}>{level.icon}</div>
+                            <div style={{ flex: 1 }}>
+                                <div className="flex-between">
+                                    <div style={{ fontWeight: 700, color: level.color }}>{level.label}</div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontWeight: 800 }}>{parseFloat(ethCost).toFixed(6)} ETH</div>
+                                        <div className="text-secondary" style={{ fontSize: '0.75rem' }}>~${calculateUsdCost(ethCost)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            {level.recommended && <Badge variant="primary" style={{ fontSize: '0.55rem' }}>BEST</Badge>}
+                        </div>
+                    );
+                })}
             </div>
 
-            <div className="gas-info">
-                <small>Gas Limit: {gasEstimate.toLocaleString()} units</small>
+            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', borderLeft: `4px solid ${isLowGas ? 'var(--success)' : 'var(--primary)'}` }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{suggestion}</div>
             </div>
-        </div>
+            
+            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                <button className="text-secondary" style={{ background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }} onClick={fetchGasData}>
+                    Refresh network state
+                </button>
+            </div>
+        </Card>
     );
 }
 
