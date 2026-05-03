@@ -112,7 +112,7 @@ The DApp follows a three-layer architectural model:
 ## Project Structure
 
 ```
-SDP new/
+EtherNexus/
 ├── blockchain/                  # Smart contract workspace
 │   ├── contracts/
 │   │   └── PaymentSystem.sol    # Core smart contract
@@ -125,6 +125,9 @@ SDP new/
 ├── frontend/                    # React DApp
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── UI/              # Reusable UI primitives (Card, Button, etc.)
+│   │   │   ├── Header.jsx       # Top navigation bar
+│   │   │   ├── Sidebar.jsx      # Left sidebar navigation
 │   │   │   ├── WalletConnect.jsx
 │   │   │   ├── Balance.jsx
 │   │   │   ├── SendPayment.jsx
@@ -142,11 +145,6 @@ SDP new/
 │   ├── vite.config.js
 │   └── package.json
 │
-├── contract/
-│   └── PaymentSystem.sol        # Source contract reference
-│   └── plot_time.py             # Transaction time analysis script
-│
-├── app.py                       # AI Resume Screening (Streamlit)
 ├── requirements.txt             # Python dependencies
 └── README.md
 ```
