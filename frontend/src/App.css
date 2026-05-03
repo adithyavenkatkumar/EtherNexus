@@ -490,6 +490,7 @@ input, select, textarea {
   outline: none;
   transition: var(--transition);
   -webkit-appearance: none;
+  appearance: none;
 }
 
 input::placeholder, textarea::placeholder {
